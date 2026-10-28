@@ -1,0 +1,205 @@
+PARAKH v2 - Complete Setup Guide
+=================================
+From Kaggle training to VS Code dashboard, step by step.
+
+
+PART A: KAGGLE — RESEARCH-READY TRAINING
+=========================================
+
+STEP A1 — Open your existing Kaggle notebook (the one with NIH dataset attached)
+  - You already have NIH dataset at /kaggle/input/datasets/organizations/nih-chest-xrays/data
+  - GPU T4 should already be enabled
+
+STEP A2 — Copy parakh_research_ready.py content into a new cell
+  This script automatically:
+    - Audits metadata for shortcut features (View Position, Follow-up #)
+    - Detects and removes perceptual duplicate images
+    - Creates a 3-way patient-level split (train/val/test) with ZERO overlap assertion
+    - Computes normalization statistics from TRAIN set only
+    - Runs 5-fold StratifiedGroupKFold cross-validation
+    - Calculates bootstrap 95% confidence intervals on AUC
+    - Evaluates on a LOCKED test set (never seen during any training)
+
+STEP A3 — Run all cells top to bottom
+  Expected training time: ~6-8 hours (5 folds x 12 epochs + final model)
+  Expected REALISTIC results after leakage fixes:
+    CV AUC:   0.91 - 0.96 (mean +/- std across 5 folds)
+    Test AUC: 0.90 - 0.95 (on locked test set)
+    These numbers are publishable and defensible.
+
+STEP A4 — Download these 5 files from Kaggle Output panel:
+  parakh_weights.pth         <- trained model weights
+  parakh_norm_mean.npy       <- normalization mean (train-computed)
+  parakh_norm_std.npy        <- normalization std  (train-computed)
+  parakh_metadata.json       <- AUC, CI, and norm stats summary
+  cv_results.csv             <- per-fold results table for paper
+
+  How to download: Right panel -> Output -> click file -> three dots -> Download
+
+STEP A5 — Place all 5 files into the backend/ folder:
+  parakh_v2/
+    backend/
+      parakh_weights.pth       <- put here
+      parakh_norm_mean.npy     <- put here
+      parakh_norm_std.npy      <- put here
+      parakh_metadata.json     <- put here
+      main.py
+      requirements.txt
+
+
+PART B: VS CODE — DASHBOARD SETUP
+===================================
+
+STEP B1 — Prerequisites (install once)
+  Python 3.10 or 3.11:  https://python.org/downloads
+  Node.js 18+:          https://nodejs.org
+  VS Code:              https://code.visualstudio.com
+
+STEP B2 — Extract ZIP and open in VS Code
+  1. Extract parakh_v2.zip -> parakh_v2 folder
+  2. VS Code -> File -> Open Folder -> select parakh_v2
+  3. Verify backend/ has your 5 downloaded files from Kaggle
+
+STEP B3 — Python backend setup
+  Open terminal in VS Code (Ctrl+`)
+
+  Windows:
+    cd backend
+    python -m venv venv
+    venv\Scripts\activate
+    pip install -r requirements.txt
+
+  Mac/Linux:
+    cd backend
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+
+  NOTE: torch install may take 5-10 minutes.
+
+STEP B4 — Set environment variables
+
+  Windows (PowerShell):
+    $env:OPENAI_API_KEY = "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"
+    $env:PARAKH_WEIGHTS = "./parakh_weights.pth"
+    $env:PARAKH_META    = "./parakh_metadata.json"
+
+  Mac/Linux:
+    export OPENAI_API_KEY="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"
+    export PARAKH_WEIGHTS="./parakh_weights.pth"
+    export PARAKH_META="./parakh_metadata.json"
+
+  Get OpenAI API key from platform.openai.com -> API Keys
+  The dashboard works without the key using a rule-based fallback summary.
+
+STEP B5 — Start backend
+  (still in backend/ with venv active)
+  uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+  Expected output:
+    [PARAKH] Loaded norm stats from ./parakh_metadata.json  mean=0.xxxx std=0.xxxx
+    [PARAKH] Weights loaded from ./parakh_weights.pth
+    [PARAKH v2] Ready on cpu (or cuda)
+    Uvicorn running on http://0.0.0.0:8000
+
+  Test: open http://localhost:8000/health in browser
+  Expected: {"status":"ok","device":"cpu","version":"2.0.0"}
+
+  Keep this terminal open.
+
+STEP B6 — Frontend setup (new terminal tab)
+  Click + in terminal panel to open a second terminal.
+
+  cd frontend
+  npm install
+  npm run dev
+
+  Expected output:
+    VITE v5.x.x  ready
+    Local:   http://localhost:3000/
+
+STEP B7 — Open dashboard
+  Browser: http://localhost:3000
+
+  The PARAKH v2 dashboard loads with:
+    - Drag-and-drop CT scan or chest X-ray upload
+    - Auto-detects CT vs X-ray modality
+    - Clinical parameter inputs (FEV1/FVC, pack-years, age)
+    - 8-panel analysis figure:
+        A - Original scan
+        B - CLAHE enhanced
+        C - Grad-CAM with red emphysema hotspot boxes
+        D - Severity heatmap (custom colormap)
+        E - Lung zone severity bars (6 anatomical zones)
+        F - Risk gauge with severity label (Mild/Moderate/Severe)
+        G - Clinical features vs reference values
+        H - Per-hotspot confidence chart
+    - Lung zone severity breakdown (6 zones with colour-coded bars)
+    - Hotspot detection table (coordinates + confidence + severity level)
+    - AI clinical summary (Gemini via Google API)
+
+
+COMMON ERRORS
+=============
+
+Error: ModuleNotFoundError: No module named 'timm'
+Fix: Make sure your venv is activated before pip install and before uvicorn.
+
+Error: [PARAKH] No weights at ./parakh_weights.pth — DEMO mode
+Fix: Download parakh_weights.pth from Kaggle Output and put it in backend/.
+
+Error: CORS error in browser console
+Fix: Backend not running or not on port 8000. Check the uvicorn terminal.
+
+Error: npm install fails
+Fix: Run node --version. Need Node 18+. Download from nodejs.org.
+
+Error: Gemini LLM API error
+Fix: Check GEMINI_API_KEY is set correctly in the terminal where uvicorn runs.
+     The system works without it — fallback summary is used instead.
+
+Error: torch install timeout
+Fix: Use: pip install torch --index-url https://download.pytorch.org/whl/cpu
+     (CPU-only version, smaller and faster to install)
+
+
+WHAT CHANGED FROM v1 (DATA LEAKAGE FIXES)
+==========================================
+
+v1 problem                    v2 fix
+-----------------------------------------------------------------------------------------------
+Image-level random split      Patient-level 3-way split with zero-overlap assertion
+No duplicate check            Perceptual hash duplicate detection + removal
+ImageNet normalization        Train-only normalization (computed from actual training images)
+Single train/val split        5-fold StratifiedGroupKFold cross-validation
+Point AUC only                Bootstrap 95% confidence intervals reported
+No metadata audit             View Position + Follow-up + Age distribution check logged
+AUC = 1.000 (suspicious)     Expected realistic AUC: 0.91 - 0.96 (publishable)
+No locked test set            Separate locked test set (never seen during training/tuning)
+
+
+PAPER REPORTING FORMAT
+======================
+
+Use this format in your Results section:
+
+Table 1. Performance comparison on NIH ChestX-ray14 (Emphysema vs Healthy)
+Patient-level split, n=XXXX images, XXXX unique patients.
+
+Method           AUC (95% CI)           Accuracy   Sensitivity  Specificity
+---------------------------------------------------------------------------
+ResNet50         0.75xx (0.xx-0.xx)     xx.x%      xx.x%        xx.x%
+DenseNet121      0.81xx (0.xx-0.xx)     xx.x%      xx.x%        xx.x%
+ViT-Base/16      0.89xx (0.xx-0.xx)     xx.x%      xx.x%        xx.x%
+Parakh-SwinV2    0.93xx (0.xx-0.xx)     xx.x%      xx.x%        xx.x%  (proposed)
+
+Cross-validation: 5-fold StratifiedGroupKFold, grouped by Patient ID.
+Confidence intervals: bootstrap (n=1000 resamples).
+All values: mean over 5 folds +/- standard deviation.
+Patient overlap across splits: 0 (verified by assertion).
+
+
+DISCLAIMER
+==========
+PARAKH v2 is a research prototype. Results must not be used for clinical
+diagnosis or patient management without review by a qualified clinician.
